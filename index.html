@@ -6,38 +6,189 @@
     <title>Monthly Shift Roster — THC / OCC EMS</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- Firebase Compat SDK v10.7.1 -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <!-- High-Resolution Direct PDF Export Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; color: #0f172a; user-select: none; -webkit-user-select: none; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f1f5f9;
+            color: #0f172a;
+            user-select: none;
+            -webkit-user-select: none;
+        }
         .custom-scrollbar { -webkit-overflow-scrolling: touch; }
         .custom-scrollbar::-webkit-scrollbar { height: 9px; width: 9px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #e2e8f0; border-radius: 8px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 8px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }
-        .sticky-emp-col { position: sticky; left: 0; z-index: 20; box-shadow: 3px 0 8px -3px rgba(15, 23, 42, 0.16); }
+
+        .sticky-emp-col {
+            position: sticky;
+            left: 0;
+            z-index: 20;
+            box-shadow: 3px 0 8px -3px rgba(15, 23, 42, 0.16);
+        }
+
         .roster-grid { border-collapse: collapse; }
-        .roster-grid th, .roster-grid td { border: 1px solid #000000; }
-        .shift-letter { font-size: 15px; font-weight: 800; letter-spacing: 0.02em; line-height: 1; }
-        @media (max-width: 640px) { .shift-letter { font-size: 13px; } }
-        .pattern-stripes { background-image: repeating-linear-gradient(90deg, #ef4444 0px, #ef4444 3px, #ffffff 3px, #ffffff 6px) !important; }
-        .pattern-grid { background-image: linear-gradient(to right, rgba(0, 0, 0, 0.52) 1px, transparent 1px), linear-gradient(to bottom, rgba(0, 0, 0, 0.52) 1px, transparent 1px); background-size: 4px 4px; }
-        .crisp-striped-text { text-shadow: 0 0 2px rgba(255, 255, 255, 0.98), 0 0 1px rgba(255, 255, 255, 0.98); }
+        .roster-grid th, .roster-grid td { border: 1.5px solid #000000; }
+        .roster-grid th, .roster-grid td, #unifiedRosterWrapper table th, #unifiedRosterWrapper table td {
+            font-weight: 800 !important;
+            color: #000000 !important;
+            border-color: #000000 !important;
+            border-width: 1.5px !important;
+        }
+        /* Fix flex/truncate collapse so employee names and shift times ALWAYS display clearly */
+        #unifiedRosterWrapper .emp-name-text,
+        #unifiedRosterWrapper .legend-label-text {
+            display: block !important;
+            flex: 1 1 auto !important;
+            min-width: 0 !important;
+            color: #000000 !important;
+            font-weight: 800 !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            white-space: nowrap !important;
+        }
+        /* Keep white text legible on dark shift cells (such as Training 'T' or zero-coverage alerts) */
+        #unifiedRosterWrapper table td[style*="color: #ffffff"],
+        #unifiedRosterWrapper table td[style*="color: rgb(255, 255, 255)"],
+        #unifiedRosterWrapper table td[style*="background-color: #1e3a8a"],
+        #unifiedRosterWrapper table td[style*="background-color: #dc2626"],
+        #unifiedRosterWrapper table td[style*="background-color: #2563eb"],
+        #unifiedRosterWrapper table td[style*="background-color: #475569"] {
+            color: #ffffff !important;
+        }
+
+        .shift-letter {
+            font-size: 15px;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            line-height: 1;
+        }
+        @media (max-width: 640px) {
+            .shift-letter { font-size: 13px; }
+        }
+
+        /* Exact Cell Fill Patterns */
+        .pattern-stripes {
+            background-image: repeating-linear-gradient(
+                90deg,
+                #ef4444 0px,
+                #ef4444 3px,
+                #ffffff 3px,
+                #ffffff 6px
+            ) !important;
+        }
+        .pattern-grid {
+            background-image:
+                linear-gradient(to right, rgba(0, 0, 0, 0.52) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(0, 0, 0, 0.52) 1px, transparent 1px);
+            background-size: 4px 4px;
+        }
+        .crisp-striped-text {
+            text-shadow: 0 0 2px rgba(255, 255, 255, 0.98), 0 0 1px rgba(255, 255, 255, 0.98);
+        }
+
         .synced-leave-cell { box-shadow: inset 0 3px 0 0 #2563eb; }
         .alert-ring-cell { outline: 2.5px solid #dc2626; outline-offset: -2.5px; }
         .prev-week-cell { opacity: 0.78; cursor: not-allowed; }
+
         tr.emp-row-dragging { opacity: 0.4; background-color: #dbeafe !important; }
         tr.emp-row-drag-over td { border-top: 3.5px solid #2563eb !important; }
+
         @media print {
             @page { size: A4 landscape; margin: 6mm; }
-            html, body { background-color: #ffffff !important; margin: 0 !important; padding: 0 !important; width: 100% !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            html, body {
+                background-color: #ffffff !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 100% !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
             .no-print, #loginGateOverlay { display: none !important; }
             main { padding: 0 !important; margin: 0 !important; display: block !important; width: 100% !important; }
-            #rosterOuterCard { border: none !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important; border-radius: 0 !important; overflow: visible !important; width: 100% !important; max-width: none !important; }
+            #rosterOuterCard {
+                border: none !important;
+                box-shadow: none !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                border-radius: 0 !important;
+                overflow: visible !important;
+                width: 100% !important;
+                max-width: none !important;
+            }
             .sticky-emp-col { position: static !important; box-shadow: none !important; }
             #rosterScrollContainer { overflow: visible !important; width: 100% !important; }
             #unifiedRosterWrapper { transform-origin: top left; zoom: var(--print-scale, 0.72); }
+            .roster-grid { border-collapse: separate !important; border-spacing: 0 !important; border-top: 1.5px solid #000000 !important; border-left: 1.5px solid #000000 !important; }
+            .roster-grid th, .roster-grid td { border-top: none !important; border-left: none !important; border-right: 1.5px solid #000000 !important; border-bottom: 1.5px solid #000000 !important; }
+        }
+/* إظهار أرقام العدادات السفلية وإلغاء أي إخفاء CSS */
+        #unifiedRosterWrapper tr:nth-child(n+12) td:not(:first-child) {
+            font-size: 12px !important;
+            line-height: 28px !important;
+            color: #000000 !important;
+            -webkit-text-fill-color: #000000 !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            text-indent: 0 !important;
+            font-weight: 800 !important;
+        }
+
+        /* إخفاء الأزرار الزائدة وأيقونات القلم أثناء الطباعة و الـ PDF */
+        @media print {
+            .no-print,
+            #loginGateOverlay,
+            #unifiedRosterWrapper tbody tr:last-child,
+            #unifiedRosterWrapper [data-action="open-add-code-modal"],
+            #unifiedRosterWrapper [data-action="open-add-counter-modal"] {
+                display: none !important;
+            }
+        }
+
+        /* توسيط مثالي لجميع الخلايا والنصوص والحروف والأرقام في الـ PDF بدون أي قص */
+        #unifiedRosterWrapper.pdf-exporting table.roster-grid th,
+        #unifiedRosterWrapper.pdf-exporting table.roster-grid td {
+            vertical-align: middle !important;
+            line-height: 1.35 !important;
+            padding-top: 0 !important;
+            padding-bottom: 0 !important;
+            overflow: visible !important;
+        }
+
+        #unifiedRosterWrapper.pdf-exporting table.roster-grid th > span,
+        #unifiedRosterWrapper.pdf-exporting table.roster-grid td > span {
+            display: inline-block !important;
+            position: relative !important;
+            top: -4px !important;
+            line-height: 1.2 !important;
+            overflow: visible !important;
+        }
+
+        #unifiedRosterWrapper.pdf-exporting table.roster-grid th > div,
+        #unifiedRosterWrapper.pdf-exporting table.roster-grid td > div {
+            display: flex !important;
+            align-items: center !important;
+            height: 100% !important;
+            position: relative !important;
+            top: -3px !important;
+            overflow: visible !important;
+        }
+
+        #unifiedRosterWrapper.pdf-exporting .truncate,
+        #unifiedRosterWrapper.pdf-exporting .emp-name-text,
+        #unifiedRosterWrapper.pdf-exporting .legend-label-text {
+            overflow: visible !important;
+            text-overflow: clip !important;
+            white-space: nowrap !important;
+            line-height: 1.4 !important;
+            height: auto !important;
         }
     </style>
 </head>
@@ -48,7 +199,12 @@
         <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border-2 border-sky-600 space-y-4">
             <div class="text-center space-y-1">
                 <div class="w-12 h-12 rounded-2xl bg-sky-700 text-white flex items-center justify-center mx-auto shadow-sm mb-2">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                    </svg>
                 </div>
                 <h2 class="text-lg font-black text-slate-900">THC / OCC EMS</h2>
                 <p class="text-xs font-semibold text-slate-500">Monthly Shift Roster — Authorized Access Only</p>
@@ -56,20 +212,26 @@
             <form id="firebaseLoginForm" class="space-y-3">
                 <div>
                     <label class="block text-xs font-bold text-slate-700 mb-1">Username</label>
-                    <input type="text" id="gateUsernameInput" required placeholder="e.g. fawari" autocomplete="username" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-600">
+                    <input type="text" id="gateUsernameInput" required placeholder="e.g. fawari" autocomplete="username"
+                        class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-600">
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-700 mb-1">Password</label>
-                    <input type="password" id="gatePasswordInput" required placeholder="••••••••" autocomplete="current-password" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-600">
+                    <input type="password" id="gatePasswordInput" required placeholder="••••••••" autocomplete="current-password"
+                        class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-600">
                 </div>
                 <p id="gateLoginError" class="hidden text-xs font-bold text-rose-600 text-center"></p>
-                <button type="submit" id="gateSubmitBtn" class="w-full py-2.5 rounded-xl bg-sky-700 hover:bg-sky-800 text-white text-sm font-extrabold shadow-sm transition cursor-pointer">Sign In</button>
+                <button type="submit" id="gateSubmitBtn"
+                    class="w-full py-2.5 rounded-xl bg-sky-700 hover:bg-sky-800 text-white text-sm font-extrabold shadow-sm transition cursor-pointer">
+                    Sign In
+                </button>
             </form>
         </div>
     </div>
 
     <!-- Main App Wrapper -->
     <div id="protectedAppShell" class="hidden min-h-screen flex flex-col">
+        <!-- Toast Container -->
         <div id="toastContainer" class="fixed bottom-4 right-3 left-3 sm:left-auto sm:right-5 z-50 flex flex-col gap-2 sm:max-w-md pointer-events-none no-print"></div>
 
         <!-- Top Application Bar -->
@@ -77,7 +239,13 @@
             <div class="max-w-[1840px] mx-auto px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2.5">
                 <div class="flex items-center gap-3 min-w-0">
                     <div class="w-10 h-10 rounded-xl bg-sky-700 text-white flex items-center justify-center shadow-xs shrink-0">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"></path></svg>
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                            <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"></path>
+                        </svg>
                     </div>
                     <div class="min-w-0">
                         <div class="flex items-center gap-2 flex-wrap">
@@ -86,8 +254,12 @@
                                 <span id="cloudStatusDot" class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
                                 <span id="cloudStatusText">Connecting...</span>
                             </span>
-                            <span id="publishStateBadge" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-300">● Published Official</span>
-                            <span id="monthLockedBadge" class="hidden inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300">🔒 Month Locked</span>
+                            <span id="publishStateBadge" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-300">
+                                ● Published Official
+                            </span>
+                            <span id="monthLockedBadge" class="hidden inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300">
+                                🔒 Month Locked
+                            </span>
                         </div>
                         <p id="loggedUserSubtitle" class="text-[11px] sm:text-xs text-slate-500 mt-0.5 truncate">Unified Shift Schedule • Dec 2026 – Dec 2030</p>
                     </div>
@@ -96,29 +268,53 @@
                 <!-- Navigation & Action Controls -->
                 <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full sm:w-auto justify-between sm:justify-end">
                     <div class="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-300 shadow-2xs">
-                        <button type="button" id="prevMonthBtn" data-action="prev-month" class="w-7 h-7 rounded-lg bg-white hover:bg-sky-50 hover:text-sky-700 border border-slate-200 flex items-center justify-center text-xs font-black text-slate-700 transition cursor-pointer disabled:opacity-40">◀</button>
-                        <select id="monthPartSelect" aria-label="Select Month" class="h-7 px-2 rounded-lg bg-white border border-slate-200 text-xs font-extrabold text-blue-700 focus:outline-none cursor-pointer"></select>
-                        <select id="yearPartSelect" aria-label="Select Year" class="h-7 px-2 rounded-lg bg-white border border-slate-200 text-xs font-extrabold text-slate-900 focus:outline-none cursor-pointer">
+                        <button type="button" id="prevMonthBtn" data-action="prev-month"
+                            class="w-7 h-7 rounded-lg bg-white hover:bg-sky-50 hover:text-sky-700 border border-slate-200 flex items-center justify-center text-xs font-black text-slate-700 transition cursor-pointer disabled:opacity-40">
+                            ◀
+                        </button>
+                        <select id="monthPartSelect" aria-label="Select Month"
+                            class="h-7 px-2 rounded-lg bg-white border border-slate-200 text-xs font-extrabold text-blue-700 focus:outline-none cursor-pointer"></select>
+                        <select id="yearPartSelect" aria-label="Select Year"
+                            class="h-7 px-2 rounded-lg bg-white border border-slate-200 text-xs font-extrabold text-slate-900 focus:outline-none cursor-pointer">
                             <option value="2026">2026</option>
                             <option value="2027">2027</option>
                             <option value="2028">2028</option>
                             <option value="2029">2029</option>
                             <option value="2030">2030</option>
                         </select>
-                        <button type="button" id="nextMonthBtn" data-action="next-month" class="w-7 h-7 rounded-lg bg-white hover:bg-sky-50 hover:text-sky-700 border border-slate-200 flex items-center justify-center text-xs font-black text-slate-700 transition cursor-pointer disabled:opacity-40">▶</button>
-                        <button type="button" data-action="jump-today" class="h-7 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-extrabold transition cursor-pointer">Today</button>
+                        <button type="button" id="nextMonthBtn" data-action="next-month"
+                            class="w-7 h-7 rounded-lg bg-white hover:bg-sky-50 hover:text-sky-700 border border-slate-200 flex items-center justify-center text-xs font-black text-slate-700 transition cursor-pointer disabled:opacity-40">
+                            ▶
+                        </button>
+                        <button type="button" data-action="jump-today"
+                            class="h-7 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-extrabold transition cursor-pointer">
+                            Today
+                        </button>
                     </div>
 
                     <div class="inline-flex items-center gap-1.5 bg-white px-2 py-1 rounded-xl border border-slate-300">
-                        <input type="text" id="empSearchInput" placeholder="Search name..." aria-label="Search Staff Name" class="w-20 sm:w-28 px-1 py-0.5 text-xs font-semibold text-slate-800 focus:outline-none">
+                        <input type="text" id="empSearchInput" placeholder="Search name..." aria-label="Search Staff Name"
+                            class="w-20 sm:w-28 px-1 py-0.5 text-xs font-semibold text-slate-800 focus:outline-none">
                         <span class="text-slate-300">|</span>
-                        <select id="empFilterSelect" aria-label="Filter Staff" class="py-0.5 pr-1 bg-transparent text-xs font-bold text-slate-700 focus:outline-none cursor-pointer max-w-[100px] sm:max-w-none"><option value="all">All Staff</option></select>
+                        <select id="empFilterSelect" aria-label="Filter Staff"
+                            class="py-0.5 pr-1 bg-transparent text-xs font-bold text-slate-700 focus:outline-none cursor-pointer max-w-[100px] sm:max-w-none">
+                            <option value="all">All Staff</option>
+                        </select>
                     </div>
 
                     <div class="inline-flex items-center gap-1.5">
-                        <button type="button" data-action="print-roster" class="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition cursor-pointer">🖨 <span class="hidden sm:inline">Print / PDF</span></button>
-                        <button type="button" data-action="open-change-password" class="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition cursor-pointer">🔑 <span class="hidden sm:inline">Password</span></button>
-                        <button type="button" data-action="sign-out" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition cursor-pointer">Sign Out</button>
+                        <button type="button" data-action="print-roster"
+                            class="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition cursor-pointer">
+                            🖨 <span class="hidden sm:inline">Print / PDF</span>
+                        </button>
+                        <button type="button" data-action="open-change-password"
+                            class="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition cursor-pointer">
+                            🔑 <span class="hidden sm:inline">Password</span>
+                        </button>
+                        <button type="button" data-action="sign-out"
+                            class="px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition cursor-pointer">
+                            Sign Out
+                        </button>
                     </div>
                 </div>
             </div>
@@ -134,11 +330,23 @@
                     <div class="bg-white rounded-2xl p-3 border border-slate-200 shadow-2xs space-y-2">
                         <div class="text-[11px] font-extrabold text-slate-700 tracking-wide">Workflow</div>
                         <div class="flex items-center gap-2 flex-wrap">
-                            <button type="button" data-action="publish-draft" id="publishDraftBtn" class="px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-700 hover:bg-emerald-800 text-white shadow-2xs transition cursor-pointer">📢 Publish &amp; Approve</button>
-                            <button type="button" data-action="toggle-draft-published" id="toggleDraftPubBtn" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 transition cursor-pointer">👁 View Published</button>
+                            <button type="button" data-action="publish-draft" id="publishDraftBtn"
+                                class="px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-700 hover:bg-emerald-800 text-white shadow-2xs transition cursor-pointer">
+                                📢 Publish &amp; Approve
+                            </button>
+                            <button type="button" data-action="toggle-draft-published" id="toggleDraftPubBtn"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 transition cursor-pointer">
+                                👁 View Published
+                            </button>
                             <div class="inline-flex items-center rounded-xl border border-slate-300 bg-white overflow-hidden">
-                                <button type="button" data-action="undo-action" id="undoBtn" disabled class="px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 border-r border-slate-200 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">↶ Undo</button>
-                                <button type="button" data-action="redo-action" id="redoBtn" disabled class="px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">↷ Redo</button>
+                                <button type="button" data-action="undo-action" id="undoBtn" disabled
+                                    class="px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 border-r border-slate-200 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                                    ↶ Undo
+                                </button>
+                                <button type="button" data-action="redo-action" id="redoBtn" disabled
+                                    class="px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                                    ↷ Redo
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -147,10 +355,26 @@
                     <div class="bg-white rounded-2xl p-3 border border-slate-200 shadow-2xs space-y-2">
                         <div class="text-[11px] font-extrabold text-slate-700 tracking-wide">Data Insights</div>
                         <div class="flex items-center gap-2 flex-wrap">
-                            <button type="button" data-action="open-sync-leaves" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 transition cursor-pointer">⇄ Sync Leaves</button>
-                            <button type="button" data-action="open-rules-modal" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition cursor-pointer">⚠️ Rules &amp; Alerts</button>
-                            <button type="button" data-action="open-receipts-modal" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 transition cursor-pointer">👁 Read Receipts</button>
-                            <button type="button" data-action="open-audit-modal" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition cursor-pointer">📋 Audit Log</button>
+                            <button type="button" data-action="open-sync-leaves"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 transition cursor-pointer">
+                                ⇄ Sync Leaves
+                            </button>
+                            <button type="button" data-action="open-rules-modal"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition cursor-pointer">
+                                ⚠️ Rules &amp; Alerts
+                            </button>
+                            <button type="button" data-action="open-receipts-modal"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 transition cursor-pointer">
+                                👁 Read Receipts
+                            </button>
+                            <button type="button" data-action="open-audit-modal"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition cursor-pointer">
+                                📋 Audit Log
+                            </button>
+                            <button type="button" data-action="open-backups-modal"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition cursor-pointer">
+                                🛡️ Backups
+                            </button>
                         </div>
                     </div>
 
@@ -158,9 +382,18 @@
                     <div class="bg-white rounded-2xl p-3 border border-slate-200 shadow-2xs space-y-2">
                         <div class="text-[11px] font-extrabold text-slate-700 tracking-wide">Staff &amp; Roster Management</div>
                         <div class="flex items-center gap-2 flex-wrap">
-                            <button type="button" data-action="add-employee" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 transition cursor-pointer">+ Add Employee</button>
-                            <button type="button" data-action="toggle-arrange-staff" id="arrangeStaffBtn" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 transition cursor-pointer">↕️ Arrange Staff</button>
-                            <button type="button" data-action="open-add-code-modal" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 transition cursor-pointer">+ Add Code</button>
+                            <button type="button" data-action="add-employee"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 transition cursor-pointer">
+                                + Add Employee
+                            </button>
+                            <button type="button" data-action="toggle-arrange-staff" id="arrangeStaffBtn"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 transition cursor-pointer">
+                                ↕️ Arrange Staff
+                            </button>
+                            <button type="button" data-action="open-add-code-modal"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 transition cursor-pointer">
+                                + Add Code
+                            </button>
                         </div>
                     </div>
 
@@ -168,11 +401,27 @@
                     <div class="bg-white rounded-2xl p-3 border border-slate-200 shadow-2xs space-y-2">
                         <div class="text-[11px] font-extrabold text-slate-700 tracking-wide">Month Tools</div>
                         <div class="flex items-center gap-2 flex-wrap">
-                            <button type="button" data-action="toggle-prev-week" id="togglePrevWeekBtn" class="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs transition cursor-pointer" title="Show/Hide Last 7 Days of Previous Month">👁 Hide Prev 7d</button>
-                            <button type="button" data-action="copy-prev-month" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition cursor-pointer">Copy Prev Month</button>
-                            <button type="button" data-action="toggle-month-lock" id="lockMonthBtn" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition cursor-pointer">Lock Month</button>
-                            <button type="button" data-action="export-csv" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition cursor-pointer">Export CSV</button>
-                            <button type="button" data-action="open-clear-month-modal" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-rose-50 text-rose-700 border border-slate-300 hover:border-rose-200 transition cursor-pointer">Clear Month</button>
+                            <button type="button" data-action="toggle-prev-week" id="togglePrevWeekBtn"
+                                class="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs transition cursor-pointer"
+                                title="Show/Hide Last 7 Days of Previous Month">
+                                👁 Hide Prev 7d
+                            </button>
+                            <button type="button" data-action="copy-prev-month"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition cursor-pointer">
+                                Copy Prev Month
+                            </button>
+                            <button type="button" data-action="toggle-month-lock" id="lockMonthBtn"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition cursor-pointer">
+                                Lock Month
+                            </button>
+                            <button type="button" data-action="export-csv"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition cursor-pointer">
+                                Export CSV
+                            </button>
+                            <button type="button" data-action="open-clear-month-modal"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-rose-50 text-rose-700 border border-slate-300 hover:border-rose-200 transition cursor-pointer">
+                                Clear Month
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -193,8 +442,12 @@
                 <div class="pt-2 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2.5">
                     <div class="inline-flex items-center gap-2 bg-emerald-50/70 px-2.5 py-1 rounded-xl border border-emerald-200">
                         <label for="adminDeptTitleInput" class="text-[11px] font-extrabold text-emerald-950 whitespace-nowrap">Title:</label>
-                        <input type="text" id="adminDeptTitleInput" maxlength="32" value="THC / OCC EMS" class="w-32 sm:w-44 px-2 py-1 rounded-lg border border-emerald-300 bg-white text-xs font-black text-slate-900 focus:outline-none">
-                        <button type="button" data-action="save-dept-title-inline" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold transition cursor-pointer">Apply</button>
+                        <input type="text" id="adminDeptTitleInput" maxlength="32" value="THC / OCC EMS"
+                            class="w-32 sm:w-44 px-2 py-1 rounded-lg border border-emerald-300 bg-white text-xs font-black text-slate-900 focus:outline-none">
+                        <button type="button" data-action="save-dept-title-inline"
+                            class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold transition cursor-pointer">
+                            Apply
+                        </button>
                     </div>
 
                     <div class="hidden lg:flex items-center gap-2.5 flex-wrap">
@@ -219,7 +472,10 @@
                             <input type="range" id="dimRowHeightRange" min="24" max="52" step="1" value="32" class="w-16 accent-sky-600">
                             <input type="number" id="dimRowHeightNum" min="24" max="52" value="32" class="w-11 px-1 py-0.5 rounded border border-slate-300 text-center font-extrabold bg-white">
                         </label>
-                        <button type="button" data-action="reset-dimensions" class="px-2.5 py-1 rounded-xl text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300">Reset</button>
+                        <button type="button" data-action="reset-dimensions"
+                            class="px-2.5 py-1 rounded-xl text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300">
+                            Reset
+                        </button>
                     </div>
                 </div>
             </section>
@@ -233,7 +489,7 @@
         </main>
     </div>
 
-    <!-- Modals (Part A) -->
+    <!-- Modals -->
     <div id="changePasswordModal" class="fixed inset-0 z-50 hidden bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 no-print">
         <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-xl border border-slate-200 space-y-4">
             <div class="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -357,8 +613,7 @@
                 <button type="button" data-action="close-modal" data-modal="addCounterRowModal" class="px-2 py-1 rounded-lg hover:bg-slate-100 text-slate-500 font-bold text-xs">✕</button>
             </div>
             <form id="addCounterRowForm" class="space-y-3 text-xs">
-                <select id="extraCounterCodeSelect" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-800 bg-white">
-                    </select>
+                <select id="extraCounterCodeSelect" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-800 bg-white"></select>
                 <div class="flex items-center justify-end gap-2 pt-2">
                     <button type="button" data-action="close-modal" data-modal="addCounterRowModal" class="px-4 py-2 rounded-xl font-bold bg-slate-100 text-slate-700">Cancel</button>
                     <button type="submit" class="px-5 py-2 rounded-xl font-bold bg-sky-600 text-white">Add Row</button>
@@ -374,9 +629,15 @@
                 <button type="button" data-action="close-modal" data-modal="clearMonthModal" class="px-2 py-1 rounded-lg hover:bg-slate-100 text-slate-500 font-bold text-xs">✕</button>
             </div>
             <p id="clearMonthDesc" class="text-xs text-slate-600 leading-relaxed"></p>
+            <div class="space-y-1.5">
+                <label class="block text-[11px] font-extrabold text-slate-700">Type <span class="text-rose-600 font-black">CLEAR</span> to confirm:</label>
+                <input type="text" id="clearMonthConfirmInput" placeholder="CLEAR" autocomplete="off"
+                    class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-black uppercase text-center focus:outline-none focus:ring-2 focus:ring-rose-500">
+            </div>
             <div class="flex items-center justify-end gap-2 pt-1">
                 <button type="button" data-action="close-modal" data-modal="clearMonthModal" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-700">Cancel</button>
-                <button type="button" data-action="confirm-clear-month" class="px-5 py-2 rounded-xl text-xs font-bold bg-rose-600 text-white">Clear Month</button>
+                <button type="button" id="confirmClearMonthBtn" data-action="confirm-clear-month" disabled
+                    class="px-5 py-2 rounded-xl text-xs font-bold bg-rose-600 text-white disabled:opacity-40 disabled:cursor-not-allowed">Clear Month</button>
             </div>
         </div>
     </div>
@@ -384,7 +645,7 @@
     <div id="syncLeavesModal" class="fixed inset-0 z-50 hidden bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 no-print">
         <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-xl border border-slate-200 space-y-4">
             <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 class="text-base font-extrabold text-slate-900">⇄ Sync Annual Leaves (2027 Planner)</h3>
+                <h3 class="text-base font-extrabold text-slate-900">⇄ Sync Annual Leaves &amp; Training (2027)</h3>
                 <button type="button" data-action="close-modal" data-modal="syncLeavesModal" class="px-2 py-1 rounded-lg hover:bg-slate-100 text-slate-500 font-bold text-xs">✕</button>
             </div>
             <div class="flex flex-col gap-2">
@@ -442,11 +703,25 @@
         </div>
     </div>
 
+    <div id="cloudBackupsModal" class="fixed inset-0 z-50 hidden bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 no-print">
+        <div class="bg-white rounded-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-5 shadow-xl border border-slate-200 space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 class="text-base font-extrabold text-slate-900">🛡️ Cloud Auto-Backups (Last 15 Snapshots)</h3>
+                <button type="button" data-action="close-modal" data-modal="cloudBackupsModal" class="px-2 py-1 rounded-lg hover:bg-slate-100 text-slate-500 font-bold text-xs">✕</button>
+            </div>
+            <div class="flex items-center justify-between gap-2 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 text-xs">
+                <span class="font-bold text-emerald-950">Create an instant manual snapshot now:</span>
+                <button type="button" data-action="create-manual-backup" class="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold shrink-0 cursor-pointer">+ Backup Now</button>
+            </div>
+            <div id="cloudBackupsListContainer" class="space-y-2 text-xs"></div>
+        </div>
+    </div>
+
     <script>
         (function () {
             "use strict";
 
-            // ضع مفتاح apiKey الحقيقي مكان "APIKEY"
+            // Replace "APIKEY" with your actual Firebase Web API Key
             const DB_BASE_PATH = "monthly_roster_occ_ems";
             const firebaseConfig = {
                 apiKey: "AIzaSyA731dlhUgqoMGG7J_GUBn_H7vxvEPchms",
@@ -518,7 +793,10 @@
 
             let currentAuthUser = null, currentUsername = "", dbInstance = null, authInstance = null;
             let publishedRef = null, draftRef = null, publishedCache = null, draftCache = null;
+            // Safety guard: blocks ANY write to Firebase until initial cloud data resolves
+            let initialCloudLoaded = false;
             let undoStack = [], redoStack = [], isPainting = false, paintOp = "apply", paintVisited = new Set(), persistDimTimer = null;
+            let pendingAuditChanges = [];
 
             function escapeHtml(str) { return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
             function clampNumber(val, min, max, fallback) { const n = Number(val); return Number.isNaN(n) ? fallback : Math.max(min, Math.min(max, Math.round(n))); }
@@ -651,11 +929,17 @@
                     };
                 }
                 if (Array.isArray(data.employees) && data.employees.length > 0) {
-                    state.employees = data.employees.map((emp, idx) => ({
-                        id: Number(emp.id) || (idx + 1),
-                        name: (emp.name && String(emp.name).trim()) ? String(emp.name).trim() : ("Employee " + (idx + 1)),
-                        username: emp.username ? String(emp.username).trim().toLowerCase() : ""
-                    }));
+                    state.employees = data.employees.map((emp, idx) => {
+                        if (typeof emp === "string") {
+                            return { id: idx + 1, name: emp.trim() || ("Employee " + (idx + 1)), username: "" };
+                        }
+                        const resolvedName = (emp.name || emp.fullName || emp.employeeName || "").toString().trim();
+                        return {
+                            id: Number(emp.id) || (idx + 1),
+                            name: resolvedName || ("Employee " + (idx + 1)),
+                            username: emp.username ? String(emp.username).trim().toLowerCase() : ""
+                        };
+                    });
                 }
                 if (Array.isArray(data.codes) && data.codes.length > 0) {
                     state.codes = data.codes.filter(c => c && c.code).map(c => {
@@ -663,7 +947,8 @@
                         const validBg = /^#[0-9A-Fa-f]{6}$/.test(String(c.color)) ? String(c.color) : "#e2e8f0";
                         const validText = /^#[0-9A-Fa-f]{6}$/.test(String(c.textColor || "")) ? String(c.textColor) : (codeUpper === "S" ? "#000000" : getContrastTextColor(validBg));
                         const patNorm = (c.pattern === "stripes" || c.pattern === "v-stripes") ? "stripes" : (c.pattern === "grid" ? "grid" : "solid");
-                        return { code: codeUpper, label: String(c.label || codeUpper), color: validBg, textColor: validText, pattern: patNorm, core: CORE_COUNTER_CODES.includes(codeUpper) };
+                        const resolvedLabel = (c.label || c.desc || c.description || c.time || codeUpper).toString().trim();
+                        return { code: codeUpper, label: resolvedLabel, color: validBg, textColor: validText, pattern: patNorm, core: CORE_COUNTER_CODES.includes(codeUpper) };
                     });
                 }
                 state.separationRules = Array.isArray(data.separationRules) ? data.separationRules : [];
@@ -678,13 +963,13 @@
                                 const empRow = rawM.assignments[empId];
                                 if (!empRow || typeof empRow !== "object") return;
                                 assign[empId] = {};
-                                Object.keys(empRow).forEach(dKey => { if (empRow[dKey]) assign[empId][String(dKey)] = String(empRow[dKey]); });
+                                Object.keys(empRow).forEach(dKey => { if (empRow[dKey]) assign[empId][String(dKey)] = String(empRow[dKey]).trim().toUpperCase(); });
                             });
                         }
                         normalizedMonths[mKey] = {
                             version: rawM.version ? String(rawM.version) : "V1",
                             locked: Boolean(rawM.locked),
-                            counterRows: Array.isArray(rawM.counterRows) ? rawM.counterRows.map(String) : [],
+                            counterRows: Array.isArray(rawM.counterRows) ? rawM.counterRows.map(c => String(c).trim().toUpperCase()) : [],
                             assignments: assign,
                             syncedLeaves: (rawM.syncedLeaves && typeof rawM.syncedLeaves === "object") ? rawM.syncedLeaves : {},
                             overrides: (rawM.overrides && typeof rawM.overrides === "object") ? rawM.overrides : {}
@@ -707,8 +992,34 @@
                 };
             }
 
+            function createCloudBackupSnapshot(reasonLabel) {
+                if (!dbInstance || !currentUsername || !initialCloudLoaded) return Promise.resolve();
+                if (!Array.isArray(state.employees) || state.employees.length === 0) return Promise.resolve();
+                const ts = Date.now();
+                const snapPayload = {
+                    reason: reasonLabel || "Auto Backup",
+                    createdBy: currentUsername,
+                    createdAt: ts,
+                    timeFormatted: new Date(ts).toLocaleString("en-GB"),
+                    monthKey: state.currentMonthKey,
+                    payload: buildExportPayload()
+                };
+                const backupsRef = dbInstance.ref(DB_BASE_PATH + "/backups");
+                return backupsRef.child(String(ts)).set(snapPayload).then(() => {
+                    backupsRef.once("value").then(snap => {
+                        const keys = Object.keys(snap.val() || {}).sort();
+                        if (keys.length > 15) {
+                            const cleanup = {};
+                            keys.slice(0, keys.length - 15).forEach(k => { cleanup[k] = null; });
+                            backupsRef.update(cleanup);
+                        }
+                    });
+                });
+            }
+
             function persistDraft(auditNote) {
-                if (!canEditCurrentView() || !draftRef) return;
+                if (!canEditCurrentView() || !draftRef || !initialCloudLoaded) return;
+                if (!Array.isArray(state.employees) || state.employees.length === 0) return;
                 const payload = buildExportPayload();
                 draftCache = JSON.parse(JSON.stringify(payload));
                 draftRef.set(payload).catch(() => updateStatusBadge("offline"));
@@ -716,13 +1027,13 @@
             }
 
             function scheduleDimensionPersist() {
-                if (!canEditCurrentView()) return;
+                if (!canEditCurrentView() || !initialCloudLoaded) return;
                 if (persistDimTimer) clearTimeout(persistDimTimer);
                 persistDimTimer = setTimeout(() => persistDraft("Updated layout dimensions"), 400);
             }
 
             function publishDraftToOfficial() {
-                if (!state.isAdmin || !publishedRef || !draftRef) return;
+                if (!state.isAdmin || !publishedRef || !draftRef || !initialCloudLoaded) return;
                 if (!state.viewingDraft) { showToast("Switch to Draft mode first before publishing.", "warning"); return; }
                 const monthRec = ensureMonthRecord(state.currentMonthKey);
                 const pubVer = (publishedCache && publishedCache.months && publishedCache.months[state.currentMonthKey]) ? publishedCache.months[state.currentMonthKey].version : null;
@@ -733,6 +1044,7 @@
                 const payload = buildExportPayload();
                 draftCache = JSON.parse(JSON.stringify(payload));
                 publishedCache = JSON.parse(JSON.stringify(payload));
+                createCloudBackupSnapshot("Published " + formatMonthBadge(state.currentMonthKey) + " (" + monthRec.version + ")");
                 draftRef.set(payload);
                 publishedRef.set(payload).then(() => {
                     renderPreservingScroll();
@@ -755,7 +1067,7 @@
             }
 
             function pushUndoSnapshot() {
-                if (!canEditCurrentView()) return;
+                if (!canEditCurrentView() || !initialCloudLoaded) return;
                 undoStack.push(JSON.stringify(buildExportPayload()));
                 if (undoStack.length > 20) undoStack.shift();
                 redoStack = [];
@@ -849,8 +1161,16 @@
                 if (!document.getElementById("rulesAlertsModal").classList.contains("hidden")) renderRulesModalContent();
             }
 
+            function recordCellAuditChange(empId, dayNum, oldVal, newVal) {
+                const emp = state.employees.find(e => String(e.id) === String(empId));
+                const empName = emp ? emp.name : ("ID#" + empId);
+                const fromTxt = oldVal || "Empty";
+                const toTxt = newVal || "Cleared";
+                pendingAuditChanges.push(`${empName}: Day ${dayNum} (${fromTxt} → ${toTxt})`);
+            }
+
             function applyPaintToCell(empId, dayNum, forcedOp) {
-                if (!canEditCurrentView()) return false;
+                if (!canEditCurrentView() || !initialCloudLoaded) return false;
                 const monthRec = ensureMonthRecord(state.currentMonthKey);
                 if (monthRec.locked) { showToast("This month is locked. Unlock it first to edit.", "error"); return false; }
                 const empKey = String(empId), dKey = String(dayNum), cellKey = empKey + "_" + dKey;
@@ -862,6 +1182,7 @@
                     delete monthRec.assignments[empKey][dKey];
                     delete monthRec.syncedLeaves[cellKey];
                     delete monthRec.overrides[cellKey];
+                    recordCellAuditChange(empId, dayNum, currentVal, null);
                     return true;
                 }
 
@@ -871,26 +1192,38 @@
                     delete monthRec.assignments[empKey][dKey];
                     delete monthRec.syncedLeaves[cellKey];
                     delete monthRec.overrides[cellKey];
+                    recordCellAuditChange(empId, dayNum, currentVal, null);
                     return true;
                 }
 
                 if (currentVal === state.activeBrush) return false;
                 monthRec.assignments[empKey][dKey] = state.activeBrush;
                 delete monthRec.syncedLeaves[cellKey];
+                recordCellAuditChange(empId, dayNum, currentVal, state.activeBrush);
                 return true;
             }
 
             function computeDailyCounters(daysList, monthRec) {
                 const totalPerDay = {}, codePerDay = {};
                 daysList.forEach(dObj => { totalPerDay[dObj.day] = 0; });
-                state.codes.forEach(c => { codePerDay[c.code] = {}; daysList.forEach(dObj => { codePerDay[c.code][dObj.day] = 0; }); });
+                state.codes.forEach(c => {
+                    const cleanCode = String(c.code || "").trim().toUpperCase();
+                    if (cleanCode) {
+                        codePerDay[cleanCode] = {};
+                        daysList.forEach(dObj => { codePerDay[cleanCode][dObj.day] = 0; });
+                    }
+                });
                 state.employees.forEach(emp => {
                     const empAssign = monthRec.assignments[String(emp.id)] || {};
                     daysList.forEach(dObj => {
-                        const assigned = empAssign[String(dObj.day)];
+                        const rawCode = empAssign[String(dObj.day)];
+                        const assigned = rawCode ? String(rawCode).trim().toUpperCase() : "";
                         if (assigned) {
                             if (ACTIVE_SHIFT_CODES.includes(assigned)) totalPerDay[dObj.day] = (totalPerDay[dObj.day] || 0) + 1;
-                            if (!codePerDay[assigned]) codePerDay[assigned] = {};
+                            if (!codePerDay[assigned]) {
+                                codePerDay[assigned] = {};
+                                daysList.forEach(d => { codePerDay[assigned][d.day] = 0; });
+                            }
                             codePerDay[assigned][dObj.day] = (codePerDay[assigned][dObj.day] || 0) + 1;
                         }
                     });
@@ -1064,7 +1397,7 @@
                 html += `<thead><tr style="border-bottom: ${BOLD_BORDER};">`;
                 html += `
                     <th ${headerEditAttr} style="${empStickyStyle} background-color: #a3c9b8; border-right: ${BOLD_BORDER}; border-bottom: ${BOLD_BORDER};"
-                        class="sticky-emp-col py-1.5 px-1.5 sm:px-2.5 text-center text-[11px] sm:text-sm font-black text-slate-950 tracking-wide ${headerCursor}">
+                        class="sticky-emp-col py-1.5 px-1.5 sm:px-2.5 text-center text-xs sm:text-sm font-black text-slate-950 tracking-wide ${headerCursor}">
                         <div class="flex items-center justify-center gap-1 truncate">
                             <span class="truncate">${escapeHtml(state.departmentTitle)}</span>
                             ${editable ? `<span class="text-[10px] text-slate-700 font-bold no-print shrink-0">✎</span>` : ""}
@@ -1087,7 +1420,7 @@
                 }
 
                 daysList.forEach(dObj => {
-                    html += `<th style="width: ${dayColW}px; min-width: ${dayColW}px; background-color: #74b3ce; border-bottom: ${BOLD_BORDER};" class="py-1 text-[11px] sm:text-xs font-black text-slate-950">${dObj.day}</th>`;
+                    html += `<th style="width: ${dayColW}px; min-width: ${dayColW}px; height: 28px; background-color: #74b3ce; border-bottom: ${BOLD_BORDER};" class="py-1.5 text-xs sm:text-[13px] font-black text-slate-950">${dObj.day}</th>`;
                 });
                 html += `<th rowspan="2" colspan="3" style="width: ${divW + legendCodeW + legendLabelW}px; background-color: #74b3ce; border-left: ${BOLD_BORDER}; border-bottom: ${BOLD_BORDER};"></th></tr>`;
 
@@ -1115,7 +1448,7 @@
 
                 daysList.forEach(dObj => {
                     const bg = dObj.isWeekend ? "#dce6f2" : "#ffffff";
-                    html += `<th style="width: ${dayColW}px; min-width: ${dayColW}px; background-color: ${bg}; border-bottom: ${BOLD_BORDER};" class="py-1 text-[10px] sm:text-[11px] font-extrabold text-slate-900">${dObj.abbr}</th>`;
+                    html += `<th style="width: ${dayColW}px; min-width: ${dayColW}px; height: 26px; background-color: ${bg}; border-bottom: ${BOLD_BORDER};" class="py-1.5 text-[11px] sm:text-xs font-extrabold text-slate-900">${dObj.abbr}</th>`;
                 });
                 html += `</tr></thead>`;
 
@@ -1155,8 +1488,8 @@
                             class="px-0.5 text-center shift-letter ${patCls} ${crispCls} ${hoverCls}">${escapeHtml(c.code)}</td>
                         <td ${editAttr} style="min-width: ${legendLabelW}px; height: ${rowH}px; background-color: #ffffff; white-space: nowrap; ${bottomBorder}"
                             class="px-1.5 sm:px-2.5 text-center text-[10.5px] sm:text-xs font-extrabold text-slate-950 whitespace-nowrap ${hoverCls}">
-                            <div class="flex items-center justify-between gap-1 whitespace-nowrap">
-                                <span class="flex-1 text-center whitespace-nowrap">${escapeHtml(c.label)}</span>
+                            <div class="flex items-center justify-between gap-1 w-full">
+                                <span class="legend-label-text text-center">${escapeHtml(c.label || c.desc || c.time || c.code)}</span>
                                 ${editable ? `<span class="text-[10px] text-sky-600 font-bold shrink-0 no-print">✎</span>` : ""}
                             </div>
                         </td>
@@ -1173,14 +1506,15 @@
                     const empEditAttr = editable ? `data-action="open-edit-emp" data-emp="${emp.id}"` : "";
                     const empHover = editable ? "cursor-pointer hover:bg-sky-50" : "";
                     const dragAttrs = (editable && state.arrangeStaffMode) ? `draggable="true"` : "";
-                    const dragHandle = (editable && state.arrangeStaffMode) ? `<span class="text-sky-600 font-black cursor-grab mr-1 no-print">☰</span>` : "";
+                    const dragHandle = (editable && state.arrangeStaffMode) ? `<span class="text-sky-600 font-black cursor-grab mr-1 shrink-0 no-print">☰</span>` : "";
 
                     html += `<tr class="emp-roster-row" data-emp-row-id="${emp.id}" ${dragAttrs}>`;
                     html += `
                         <td ${empEditAttr} style="${empStickyStyle} height: ${rowH}px; background-color: #ffffff; border-right: ${BOLD_BORDER};"
                             class="sticky-emp-col px-1.5 sm:px-2.5 text-left text-[11px] sm:text-xs font-extrabold text-slate-900 ${empHover}" title="${escapeHtml(emp.name)}">
-                            <div class="flex items-center justify-between gap-1">
-                                <span class="truncate flex items-center">${dragHandle}${escapeHtml(emp.name)}</span>
+                            <div class="flex items-center justify-between gap-1 w-full">
+                                ${dragHandle}
+                                <span class="emp-name-text">${escapeHtml(emp.name)}</span>
                                 ${editable ? `<span class="text-[10px] text-slate-400 font-bold shrink-0 no-print">✎</span>` : ""}
                             </div>
                         </td>
@@ -1235,37 +1569,40 @@
                     globalRowIndex++;
                 });
 
-                html += `<tr style="border-top: ${BOLD_BORDER}; border-bottom: ${BOLD_BORDER};">`;
+                html += `<tr>`;
                 html += `<td style="${empStickyStyle} height: ${rowH}px; background-color: #a3c9b8; border-right: ${BOLD_BORDER}; border-top: ${BOLD_BORDER}; border-bottom: ${BOLD_BORDER};" class="sticky-emp-col px-1.5 sm:px-2.5 text-center text-[11px] sm:text-xs font-black text-slate-950">Total Active</td>`;
                 if (prevWeekData) {
                     html += `<td colspan="${prevColsCount}" style="height: ${rowH}px; background-color: #e2e8f0; border-right: ${BOLD_BORDER}; border-top: ${BOLD_BORDER}; border-bottom: ${BOLD_BORDER};" class="text-[10px] font-extrabold text-slate-600 no-print">${escapeHtml(prevWeekData.prevLabel)} (Last 7d)</td>`;
                 }
                 daysList.forEach(dObj => {
                     const count = totalPerDay[dObj.day] || 0;
-                    html += `<td style="width: ${dayColW}px; min-width: ${dayColW}px; height: ${rowH}px; background-color: #fecdd3; color: #991b1b; border-top: ${BOLD_BORDER}; border-bottom: ${BOLD_BORDER};" class="text-[11px] sm:text-xs font-black">${count}</td>`;
+                    html += `<td style="width: ${dayColW}px; min-width: ${dayColW}px; height: ${rowH}px; background-color: #fecdd3; color: #991b1b; border-top: ${BOLD_BORDER}; border-bottom: ${BOLD_BORDER}; vertical-align: middle;" class="text-[11px] sm:text-xs font-black">${count}</td>`;
                 });
                 html += renderRightSideCells(globalRowIndex);
                 html += `</tr>`;
                 globalRowIndex++;
 
-                activeCounterCodes.forEach(codeStr => {
-                    const def = getCodeDef(codeStr);
+                activeCounterCodes.forEach(rawCounterItem => {
+                    const rawStr = typeof rawCounterItem === "object"
+                        ? (rawCounterItem.code || rawCounterItem.label || rawCounterItem.name || "")
+                        : String(rawCounterItem || "");
+                    const codeStr = rawStr.trim().split(/[\s(]/)[0].trim().toUpperCase();
+                    if (!codeStr) return;
+                    const codesToSum = codeStr.split("+").map(s => s.trim()).filter(Boolean);
+                    const primaryCode = codesToSum[0] || codeStr;
+                    const def = getCodeDef(primaryCode);
                     const isCore = CORE_COUNTER_CODES.includes(codeStr);
                     const txtColor = resolveCodeTextColor(def);
                     const patCls = getPatternClass(def.pattern);
                     const crispCls = (patCls === "pattern-stripes" && txtColor.toLowerCase() === "#000000") ? "crisp-striped-text" : "";
-                    const countsMap = codePerDay[codeStr] || {};
 
                     html += `<tr>`;
                     html += `
-                        <td style="${empStickyStyle} height: ${rowH}px; background-color: ${escapeHtml(def.color)}; color: ${escapeHtml(txtColor)}; border-right: ${BOLD_BORDER};" class="sticky-emp-col px-1.5 sm:px-2.5 text-center ${patCls} ${crispCls}">
-                            <div class="flex items-center justify-between gap-0.5 sm:gap-1">
-                                <span class="w-3 sm:w-4"></span>
-                                <span class="inline-flex items-center justify-center gap-1 truncate">
-                                    <span class="shift-letter">${escapeHtml(def.code)}</span>
-                                    <span class="text-[9.5px] sm:text-[11px] font-bold opacity-85 truncate">(${escapeHtml(def.label)})</span>
-                                </span>
-                                ${(!isCore && editable) ? `<button type="button" data-action="remove-counter-row" data-code="${escapeHtml(def.code)}" class="w-4 h-4 rounded bg-black/20 hover:bg-rose-600 text-white text-[10px] font-black flex items-center justify-center leading-none cursor-pointer no-print shrink-0">×</button>` : `<span class="w-3 sm:w-4"></span>`}
+                        <td style="${empStickyStyle} height: ${rowH}px; background-color: ${escapeHtml(def.color)}; color: ${escapeHtml(txtColor)}; border-right: ${BOLD_BORDER}; vertical-align: middle; text-align: center;" class="sticky-emp-col px-1.5 sm:px-2.5 text-center ${patCls} ${crispCls}">
+                            <div class="flex items-center justify-between gap-1 w-full h-full">
+                                <span class="w-4 shrink-0"></span>
+                                <span class="flex-1 text-center shift-letter leading-none" style="font-size: 13px; font-weight: 800;">${escapeHtml(codeStr)}</span>
+                                ${(!isCore && editable) ? `<button type="button" data-action="remove-counter-row" data-code="${escapeHtml(codeStr)}" class="w-4 h-4 rounded bg-black/20 hover:bg-rose-600 text-white text-[10px] font-black flex items-center justify-center leading-none cursor-pointer no-print shrink-0">×</button>` : `<span class="w-4 shrink-0"></span>`}
                             </div>
                         </td>
                     `;
@@ -1273,12 +1610,16 @@
                         html += `<td colspan="${prevColsCount}" style="height: ${rowH}px; background-color: #f8fafc; border-right: ${BOLD_BORDER};" class="text-[10px] font-bold text-slate-400 no-print">—</td>`;
                     }
                     daysList.forEach(dObj => {
-                        const val = countsMap[dObj.day] || 0;
+                        let val = 0;
+                        codesToSum.forEach(cKey => {
+                            const cMap = codePerDay[cKey];
+                            if (cMap && typeof cMap[dObj.day] === "number") val += cMap[dObj.day];
+                        });
                         const isZeroCoreAlert = isCore && val === 0;
                         const cellBg = isZeroCoreAlert ? "#dc2626" : "#ffffff";
-                        const cellText = isZeroCoreAlert ? "#ffffff" : "#0f172a";
+                        const cellText = isZeroCoreAlert ? "#ffffff" : "#000000";
                         const cellFont = isZeroCoreAlert ? "text-xs sm:text-sm font-black" : "text-[11px] sm:text-xs font-extrabold";
-                        html += `<td style="width: ${dayColW}px; min-width: ${dayColW}px; height: ${rowH}px; background-color: ${cellBg}; color: ${cellText};" class="${cellFont}">${val}</td>`;
+                        html += `<td style="width: ${dayColW}px; min-width: ${dayColW}px; height: ${rowH}px; background-color: ${cellBg}; color: ${cellText}; vertical-align: middle;" class="${cellFont}">${val}</td>`;
                     });
                     html += renderRightSideCells(globalRowIndex);
                     html += `</tr>`;
@@ -1392,79 +1733,231 @@
 
             function openAuditLogModal() {
                 if (!dbInstance) return;
-                dbInstance.ref(DB_BASE_PATH + "/audit_log").limitToLast(50).once("value").then(function (snap) {
+                dbInstance.ref(DB_BASE_PATH + "/audit_log").limitToLast(300).once("value").then(function (snap) {
                     const items = Object.values(snap.val() || {}).sort((a, b) => b.timestamp - a.timestamp);
                     document.getElementById("auditLogListContainer").innerHTML = items.map(i => `<div class="flex justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-800"><span><strong>${escapeHtml(i.user)}:</strong> ${escapeHtml(i.action)}</span><span class="text-slate-400 shrink-0">${escapeHtml(i.timeFormatted)}</span></div>`).join("") || `<p class="text-slate-400">No audit records yet.</p>`;
                     openModal("auditLogModal");
                 });
             }
 
+            function openCloudBackupsModal() {
+                if (!dbInstance) return;
+                dbInstance.ref(DB_BASE_PATH + "/backups").once("value").then(function (snap) {
+                    const raw = snap.val() || {};
+                    const items = Object.keys(raw).map(k => ({ key: k, ...raw[k] })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+                    document.getElementById("cloudBackupsListContainer").innerHTML = items.map(b => `
+                        <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-800">
+                            <div class="min-w-0">
+                                <div class="font-extrabold text-slate-900 truncate">${escapeHtml(b.reason || "Snapshot")}</div>
+                                <div class="text-[11px] text-slate-500">By <strong>${escapeHtml(b.createdBy || "unknown")}</strong> • ${escapeHtml(b.timeFormatted || "")}</div>
+                            </div>
+                            <button type="button" data-action="restore-cloud-backup" data-key="${escapeHtml(b.key)}"
+                                class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-extrabold shrink-0 cursor-pointer">
+                                Restore
+                            </button>
+                        </div>
+                    `).join("") || `<p class="text-slate-400 text-center py-3">No backups saved yet. Backups are created automatically on every Publish.</p>`;
+                    openModal("cloudBackupsModal");
+                });
+            }
+
+            function restoreCloudBackup(backupKey) {
+                if (!canEditCurrentView() || !dbInstance || !backupKey) return;
+                dbInstance.ref(DB_BASE_PATH + "/backups/" + backupKey).once("value").then(function (snap) {
+                    const record = snap.val();
+                    if (!record || !record.payload) { showToast("Backup payload not found.", "error"); return; }
+                    createCloudBackupSnapshot("Safety snapshot before restore").then(() => {
+                        pushUndoSnapshot();
+                        applyPayloadToState(record.payload);
+                        renderPreservingScroll();
+                        persistDraft("Restored backup from " + (record.timeFormatted || backupKey));
+                        closeModal("cloudBackupsModal");
+                        showToast("Backup restored to Draft! Click 'Publish & Approve' when ready.", "success");
+                    });
+                });
+            }
+
             function runSyncFromPlanner(sourcePath) {
-    if (!canEditCurrentView() || !dbInstance) return;
-    const resEl = document.getElementById("syncLeavesResultText");
-    resEl.className = "text-xs font-extrabold text-center text-slate-600";
-    resEl.textContent = "⏳ Fetching approved leaves & training...";
+                if (!canEditCurrentView() || !dbInstance || !initialCloudLoaded) return;
+                const resEl = document.getElementById("syncLeavesResultText");
+                resEl.className = "text-xs font-extrabold text-center text-slate-600";
+                resEl.textContent = "⏳ Fetching approved leaves & training...";
+                dbInstance.ref(sourcePath).once("value").then(function (snap) {
+                    const planner = snap.val();
+                    if (!planner || !planner.employees || !planner.entries) { resEl.className = "text-xs font-extrabold text-center text-amber-700"; resEl.textContent = "⚠️ No planner records found."; return; }
+                    pushUndoSnapshot();
+                    const monthRec = ensureMonthRecord(state.currentMonthKey);
+                    const plannerEmps = Object.values(planner.employees);
+                    let leaveCount = 0;
+                    let trainingCount = 0;
+                    state.employees.forEach(rEmp => {
+                        const matched = plannerEmps.find(p =>
+                            (p.name && p.name.trim().toLowerCase() === rEmp.name.trim().toLowerCase()) ||
+                            String(p.id) === String(rEmp.id)
+                        );
+                        if (!matched) return;
+                        const entries = planner.entries[matched.id] || {};
+                        Object.keys(entries).forEach(dateStr => {
+                            if (!dateStr.startsWith(state.currentMonthKey)) return;
+                            const entryVal = entries[dateStr];
+                            const entryType = (entryVal && typeof entryVal === "object")
+                                ? String(entryVal.type || "L").toUpperCase()
+                                : String(entryVal || "L").toUpperCase();
+                            const dayNum = parseInt(dateStr.split("-")[2], 10);
+                            const cellKey = rEmp.id + "_" + dayNum;
+                            if (!monthRec.assignments[String(rEmp.id)]) monthRec.assignments[String(rEmp.id)] = {};
+                            const existingVal = monthRec.assignments[String(rEmp.id)][String(dayNum)];
+                            if (existingVal && !monthRec.syncedLeaves[cellKey] && !monthRec.overrides[cellKey]) return;
+                            if (entryType === "T") {
+                                monthRec.assignments[String(rEmp.id)][String(dayNum)] = "T";
+                                delete monthRec.syncedLeaves[cellKey];
+                                trainingCount++;
+                            } else {
+                                monthRec.assignments[String(rEmp.id)][String(dayNum)] = "V";
+                                monthRec.syncedLeaves[cellKey] = true;
+                                leaveCount++;
+                            }
+                        });
+                    });
+                    renderPreservingScroll();
+                    persistDraft("Synced " + leaveCount + " leave(s) & " + trainingCount + " training day(s) from " + sourcePath);
+                    resEl.className = "text-xs font-extrabold text-center text-emerald-700";
+                    resEl.textContent = "✅ Synced " + leaveCount + " leave(s) (V) & " + trainingCount + " training day(s) (T)!";
+                });
+            }
 
-    dbInstance.ref(sourcePath).once("value").then(function (snap) {
-        const planner = snap.val();
-        if (!planner || !planner.employees || !planner.entries) {
-            resEl.className = "text-xs font-extrabold text-center text-amber-700";
-            resEl.textContent = "⚠️ No planner records found.";
-            return;
-        }
+            async function handlePrintPDF() {
+                ["changePasswordModal", "editHeaderModal", "editEmpModal", "codeEditorModal", "addCounterRowModal", "clearMonthModal", "syncLeavesModal", "rulesAlertsModal", "readReceiptsModal", "auditLogModal", "cloudBackupsModal"].forEach(closeModal);
 
-        pushUndoSnapshot();
-        const monthRec = ensureMonthRecord(state.currentMonthKey);
-        const plannerEmps = Object.values(planner.employees);
-        let leaveCount = 0;
-        let trainingCount = 0;
-
-        state.employees.forEach(rEmp => {
-            const matched = plannerEmps.find(p =>
-                (p.name && p.name.trim().toLowerCase() === rEmp.name.trim().toLowerCase()) ||
-                String(p.id) === String(rEmp.id)
-            );
-            if (!matched) return;
-
-            const entries = planner.entries[matched.id] || {};
-            Object.keys(entries).forEach(dateStr => {
-                if (!dateStr.startsWith(state.currentMonthKey)) return;
-
-                const entryVal = entries[dateStr];
-                const entryType = (entryVal && typeof entryVal === "object")
-                    ? String(entryVal.type || "L").toUpperCase()
-                    : String(entryVal || "L").toUpperCase();
-
-                const dayNum = parseInt(dateStr.split("-")[2], 10);
-                if (!monthRec.assignments[String(rEmp.id)]) monthRec.assignments[String(rEmp.id)] = {};
-
-                if (entryType === "T") {
-                    monthRec.assignments[String(rEmp.id)][String(dayNum)] = "T";
-                    delete monthRec.syncedLeaves[rEmp.id + "_" + dayNum];
-                    trainingCount++;
-                } else {
-                    monthRec.assignments[String(rEmp.id)][String(dayNum)] = "V";
-                    monthRec.syncedLeaves[rEmp.id + "_" + dayNum] = true;
-                    leaveCount++;
-                }
-            });
-        });
-
-        renderPreservingScroll();
-        persistDraft("Synced " + leaveCount + " leave(s) & " + trainingCount + " training day(s) from " + sourcePath);
-        resEl.className = "text-xs font-extrabold text-center text-emerald-700";
-        resEl.textContent = "✅ Synced " + leaveCount + " leave(s) (V) & " + trainingCount + " training day(s) (T)!";
-    });
-}
-            function handlePrintPDF() {
-                ["changePasswordModal", "editHeaderModal", "editEmpModal", "codeEditorModal", "addCounterRowModal", "clearMonthModal", "syncLeavesModal", "rulesAlertsModal", "readReceiptsModal", "auditLogModal"].forEach(closeModal);
                 const wrapper = document.getElementById("unifiedRosterWrapper");
-                if (wrapper) {
-                    const tableEl = wrapper.querySelector("table");
-                    const tableWidth = tableEl ? tableEl.offsetWidth : 1480;
-                    document.documentElement.style.setProperty("--print-scale", String(Math.min(1, Math.max(0.48, Number((1040 / tableWidth).toFixed(3))))));
+                const scrollContainer = document.getElementById("rosterScrollContainer");
+                const outerCard = document.getElementById("rosterOuterCard");
+                if (!wrapper || !window.html2canvas || !window.jspdf) {
+                    window.print();
+                    return;
                 }
-                window.print();
+
+                showToast("Generating High-Res PDF...", "info");
+
+                // Save current UI state
+                const prevShowPrevWeek = state.showPrevWeek;
+                const prevViewingDraft = state.viewingDraft;
+                const prevOverflow = scrollContainer ? scrollContainer.style.overflow : "";
+                const prevCardOverflow = outerCard ? outerCard.style.overflow : "";
+                const prevWidth = wrapper.style.width;
+
+                try {
+                    // Render clean read-only table so rowspan & borders align with zero gaps
+                    state.showPrevWeek = false;
+                    state.viewingDraft = false;
+                    renderUnifiedRosterTable(ensureMonthRecord(state.currentMonthKey));
+
+                    if (scrollContainer) scrollContainer.style.overflow = "visible";
+                    if (outerCard) outerCard.style.overflow = "visible";
+                    wrapper.style.width = "max-content";
+                    wrapper.classList.add("pdf-exporting");
+
+                    // Wrap plain text cells in a span so html2canvas centers them vertically
+                    wrapper.querySelectorAll("table.roster-grid th, table.roster-grid td").forEach(cell => {
+                        if (cell.children.length === 0 && cell.textContent.trim() !== "") {
+                            cell.innerHTML = `<span>${cell.innerHTML}</span>`;
+                        }
+                    });
+
+                    // Temporarily unstick employee column and enforce crisp 1.5px borders for capture
+                    const stickyCells = wrapper.querySelectorAll(".sticky-emp-col");
+                    stickyCells.forEach(el => {
+                        el.dataset.prevPos = el.style.position;
+                        el.style.position = "static";
+                        el.style.boxShadow = "none";
+                    });
+
+                    const tableEl = wrapper.querySelector("table.roster-grid");
+                    const gridCells = wrapper.querySelectorAll(".roster-grid th, .roster-grid td");
+                    if (tableEl) {
+                        tableEl.dataset.prevCollapse = tableEl.style.borderCollapse;
+                        tableEl.style.borderCollapse = "separate";
+                        tableEl.style.borderSpacing = "0";
+                        tableEl.style.borderTop = "1.5px solid #000000";
+                        tableEl.style.borderLeft = "1.5px solid #000000";
+                    }
+                    gridCells.forEach(cell => {
+                        cell.dataset.prevBorderTop = cell.style.borderTop;
+                        cell.dataset.prevBorderLeft = cell.style.borderLeft;
+                        cell.dataset.prevBorderRight = cell.style.borderRight;
+                        cell.dataset.prevBorderBottom = cell.style.borderBottom;
+                        cell.style.borderTop = "none";
+                        cell.style.borderLeft = "none";
+                        if (!cell.style.borderRight || cell.style.borderRight.startsWith("1px")) {
+                            cell.style.borderRight = "1.5px solid #000000";
+                        }
+                        if (!cell.style.borderBottom || cell.style.borderBottom.startsWith("1px")) {
+                            cell.style.borderBottom = "1.5px solid #000000";
+                        }
+                    });
+
+                    const canvas = await html2canvas(wrapper, {
+                        scale: 2.5,
+                        useCORS: true,
+                        backgroundColor: "#ffffff",
+                        logging: false
+                    });
+
+                    wrapper.classList.remove("pdf-exporting");
+
+                    // Restore original styles immediately
+                    if (tableEl) {
+                        tableEl.style.borderCollapse = tableEl.dataset.prevCollapse || "";
+                        tableEl.style.borderSpacing = "";
+                        tableEl.style.borderTop = "";
+                        tableEl.style.borderLeft = "";
+                    }
+                    gridCells.forEach(cell => {
+                        cell.style.borderTop = cell.dataset.prevBorderTop || "";
+                        cell.style.borderLeft = cell.dataset.prevBorderLeft || "";
+                        cell.style.borderRight = cell.dataset.prevBorderRight || "";
+                        cell.style.borderBottom = cell.dataset.prevBorderBottom || "";
+                    });
+                    stickyCells.forEach(el => {
+                        el.style.position = el.dataset.prevPos || "";
+                        el.style.boxShadow = "";
+                    });
+                    if (scrollContainer) scrollContainer.style.overflow = prevOverflow;
+                    if (outerCard) outerCard.style.overflow = prevCardOverflow;
+                    wrapper.style.width = prevWidth;
+                    state.showPrevWeek = prevShowPrevWeek;
+                    state.viewingDraft = prevViewingDraft;
+                    renderUnifiedRosterTable(ensureMonthRecord(state.currentMonthKey));
+
+                    // Build A4 Landscape PDF fitted cleanly on 1 page
+                    const { jsPDF } = window.jspdf;
+                    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+                    const pageW = pdf.internal.pageSize.getWidth();
+                    const pageH = pdf.internal.pageSize.getHeight();
+                    const margin = 6;
+                    const availW = pageW - margin * 2;
+                    const availH = pageH - margin * 2;
+
+                    const ratio = Math.min(availW / canvas.width, availH / canvas.height);
+                    const imgW = canvas.width * ratio;
+                    const imgH = canvas.height * ratio;
+                    const offsetX = margin + (availW - imgW) / 2;
+                    const offsetY = margin;
+
+                    const imgData = canvas.toDataURL("image/png", 1.0);
+                    pdf.addImage(imgData, "PNG", offsetX, offsetY, imgW, imgH, undefined, "FAST");
+
+                    pdf.save(`EMS_Roster_${state.currentMonthKey}.pdf`);
+                    showToast("High-Res PDF downloaded successfully!", "success");
+                } catch (err) {
+                    if (scrollContainer) scrollContainer.style.overflow = prevOverflow;
+                    if (outerCard) outerCard.style.overflow = prevCardOverflow;
+                    wrapper.style.width = prevWidth;
+                    state.showPrevWeek = prevShowPrevWeek;
+                    state.viewingDraft = prevViewingDraft;
+                    renderUnifiedRosterTable(ensureMonthRecord(state.currentMonthKey));
+                    window.print();
+                }
             }
 
             function updateCodePreviewBox() {
@@ -1564,6 +2057,7 @@
             });
             document.getElementById("empFilterSelect").addEventListener("change", function (e) { state.filterEmpId = e.target.value; renderUnifiedRosterTable(ensureMonthRecord(state.currentMonthKey)); });
             document.getElementById("empSearchInput").addEventListener("input", function (e) { state.searchQuery = e.target.value; renderUnifiedRosterTable(ensureMonthRecord(state.currentMonthKey)); });
+            document.getElementById("clearMonthConfirmInput").addEventListener("input", function (e) { const btn = document.getElementById("confirmClearMonthBtn"); if (btn) btn.disabled = (e.target.value.trim().toUpperCase() !== "CLEAR"); });
             document.getElementById("codeEditorColorPicker").addEventListener("input", function (e) { document.getElementById("codeEditorHexInput").value = e.target.value.toUpperCase(); updateCodePreviewBox(); });
             document.getElementById("codeEditorHexInput").addEventListener("input", function (e) { const val = e.target.value.trim(); if (/^#[0-9A-Fa-f]{6}$/.test(val)) { document.getElementById("codeEditorColorPicker").value = val; updateCodePreviewBox(); } });
             document.getElementById("codeEditorTextColorPicker").addEventListener("input", function (e) { document.getElementById("codeEditorTextHexInput").value = e.target.value.toUpperCase(); updateCodePreviewBox(); });
@@ -1681,8 +2175,31 @@
                     Object.keys(prevRec.assignments).forEach(empId => { copiedAssign[empId] = {}; Object.keys(prevRec.assignments[empId]).forEach(dKey => { if (Number(dKey) <= maxDaysCurr) copiedAssign[empId][dKey] = prevRec.assignments[empId][dKey]; }); });
                     monthRec.assignments = copiedAssign; monthRec.counterRows = [...(prevRec.counterRows || [])]; monthRec.syncedLeaves = {}; monthRec.overrides = {};
                     renderPreservingScroll(); persistDraft("Copied shifts from " + formatMonthBadge(prevKey));
-                } else if (action === "open-clear-month-modal" && canEditCurrentView()) { document.getElementById("clearMonthDesc").innerHTML = "Clear all shifts for <strong>" + formatMonthBadge(state.currentMonthKey) + "</strong>?"; openModal("clearMonthModal"); }
-                else if (action === "confirm-clear-month" && canEditCurrentView()) { pushUndoSnapshot(); const monthRec = ensureMonthRecord(state.currentMonthKey); monthRec.assignments = {}; monthRec.syncedLeaves = {}; monthRec.overrides = {}; monthRec.locked = false; closeModal("clearMonthModal"); renderPreservingScroll(); persistDraft("Cleared month"); }
+                } else if (action === "open-backups-modal" && state.isAdmin) openCloudBackupsModal();
+                else if (action === "create-manual-backup" && canEditCurrentView()) { createCloudBackupSnapshot("Manual Backup (" + formatMonthBadge(state.currentMonthKey) + ")").then(() => { showToast("Backup snapshot saved!", "success"); openCloudBackupsModal(); }); }
+                else if (action === "restore-cloud-backup" && canEditCurrentView()) restoreCloudBackup(actionEl.dataset.key);
+                else if (action === "open-clear-month-modal" && canEditCurrentView()) {
+                    document.getElementById("clearMonthDesc").innerHTML = "Clear all shifts for <strong>" + formatMonthBadge(state.currentMonthKey) + "</strong>? An automatic backup will be saved first.";
+                    const cInp = document.getElementById("clearMonthConfirmInput");
+                    const cBtn = document.getElementById("confirmClearMonthBtn");
+                    if (cInp) cInp.value = "";
+                    if (cBtn) cBtn.disabled = true;
+                    openModal("clearMonthModal");
+                }
+                else if (action === "confirm-clear-month" && canEditCurrentView()) {
+                    const cInp = document.getElementById("clearMonthConfirmInput");
+                    if (!cInp || cInp.value.trim().toUpperCase() !== "CLEAR") { showToast("Please type CLEAR to confirm.", "warning"); return; }
+                    createCloudBackupSnapshot("Before Clear Month (" + formatMonthBadge(state.currentMonthKey) + ")");
+                    pushUndoSnapshot();
+                    const monthRec = ensureMonthRecord(state.currentMonthKey);
+                    monthRec.assignments = {};
+                    monthRec.syncedLeaves = {};
+                    monthRec.overrides = {};
+                    monthRec.locked = false;
+                    closeModal("clearMonthModal");
+                    renderPreservingScroll();
+                    persistDraft("Cleared month " + formatMonthBadge(state.currentMonthKey));
+                }
                 else if (action === "export-csv") exportMonthlyCSV();
             });
 
@@ -1695,7 +2212,14 @@
                     if (!cell) return;
                     e.preventDefault();
                     pushUndoSnapshot();
-                    if (applyPaintToCell(Number(cell.dataset.emp), Number(cell.dataset.day), "clear")) { renderPreservingScroll(); persistDraft("Cleared cell"); }
+                    pendingAuditChanges = [];
+                    if (applyPaintToCell(Number(cell.dataset.emp), Number(cell.dataset.day), "clear")) {
+                        const monthTag = formatMonthBadge(state.currentMonthKey);
+                        const detailMsg = `${monthTag} | ` + pendingAuditChanges.join(", ");
+                        pendingAuditChanges = [];
+                        renderPreservingScroll();
+                        persistDraft(detailMsg);
+                    }
                 });
 
                 const startAdminGridPaint = (cell, altKey) => {
@@ -1705,6 +2229,7 @@
                     const monthRec = ensureMonthRecord(state.currentMonthKey);
                     if (monthRec.locked) { showToast("Month is locked.", "error"); return false; }
                     pushUndoSnapshot();
+                    pendingAuditChanges = [];
                     const existing = (monthRec.assignments[String(empId)] || {})[String(dayNum)] || null;
                     paintOp = (state.activeBrush !== "CLEAR" && existing === state.activeBrush) ? "clear" : "apply";
                     isPainting = true;
@@ -1727,7 +2252,20 @@
                 unifiedWrapper.addEventListener("touchmove", function (e) { if (isPainting && e.touches.length === 1) { e.preventDefault(); const t = e.touches[0]; const targetEl = document.elementFromPoint(t.clientX, t.clientY); const cell = targetEl ? targetEl.closest("[data-cell]") : null; if (cell) moveAdminGridPaint(cell); } }, { passive: false });
             }
 
-            const endAdminGridPaint = () => { if (isPainting) { isPainting = false; paintVisited.clear(); persistDraft("Edited shift assignments"); } };
+            const endAdminGridPaint = () => {
+                if (isPainting) {
+                    isPainting = false;
+                    paintVisited.clear();
+                    if (pendingAuditChanges.length > 0) {
+                        const monthTag = formatMonthBadge(state.currentMonthKey);
+                        const summary = pendingAuditChanges.length <= 6
+                            ? pendingAuditChanges.join(", ")
+                            : pendingAuditChanges.slice(0, 6).join(", ") + ` (+${pendingAuditChanges.length - 6} more)`;
+                        pendingAuditChanges = [];
+                        persistDraft(`${monthTag} | ${summary}`);
+                    }
+                }
+            };
             window.addEventListener("mouseup", endAdminGridPaint);
             window.addEventListener("touchend", endAdminGridPaint);
 
@@ -1814,7 +2352,10 @@
 
                 authInstance.onAuthStateChanged(function (user) {
                     if (!user) {
-                        currentAuthUser = null; currentUsername = ""; state.isAdmin = false;
+                        currentAuthUser = null;
+                        currentUsername = "";
+                        state.isAdmin = false;
+                        initialCloudLoaded = false;
                         document.getElementById("loginGateOverlay").classList.remove("hidden");
                         document.getElementById("protectedAppShell").classList.add("hidden");
                         return;
@@ -1828,6 +2369,7 @@
 
                     publishedRef.on("value", function (snap) {
                         publishedCache = snap.val();
+                        if (!state.isAdmin) initialCloudLoaded = true;
                         if (!state.isAdmin || !state.viewingDraft) {
                             if (publishedCache) applyPayloadToState(publishedCache);
                             renderPreservingScroll();
@@ -1838,7 +2380,11 @@
                     if (state.isAdmin) {
                         draftRef.on("value", function (snap) {
                             draftCache = snap.val() || publishedCache;
-                            if (state.viewingDraft && draftCache) { applyPayloadToState(draftCache); renderPreservingScroll(); }
+                            initialCloudLoaded = true;
+                            if (state.viewingDraft && draftCache) {
+                                applyPayloadToState(draftCache);
+                                renderPreservingScroll();
+                            }
                         });
                     }
                     renderAll();
